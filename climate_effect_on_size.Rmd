@@ -25,9 +25,9 @@ library(lmerTest)
 ```
 
 ```{r}
-size_data <- read.csv("D:\\Personal Hub\\UHasselt Course Material\\Semester 2\\pmhd\\size.data.csv")
-soil_data <- read.csv("D:\\Personal Hub\\UHasselt Course Material\\Semester 2\\pmhd\\soil.data.csv")
-outcome_data <- read.csv("D:\\Personal Hub\\UHasselt Course Material\\Semester 2\\pmhd\\outcome.data.csv")
+size_data <- read.csv("size.data.csv")
+soil_data <- read.csv("soil.data.csv")
+outcome_data <- read.csv("outcome.data.csv")
 ```
 
 ```{r}
