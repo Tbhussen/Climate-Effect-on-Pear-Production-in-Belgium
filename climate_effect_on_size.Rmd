@@ -1,0 +1,405 @@
+---
+title: "Climate Effect on Pear Growth"
+author: "Tamim Hussein"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Notes
+
+-   Location is not included because the size_data only have 4 ecotron ids. All 4 ecotrons are in BE.
+
+# Code Appenddix
+
+```{r}
+library(dplyr)
+library(tidyverse)
+library(car)
+library(lme4)
+library(tidyr)
+library(lmerTest)
+```
+
+```{r}
+size_data <- read.csv("D:\\Personal Hub\\UHasselt Course Material\\Semester 2\\pmhd\\size.data.csv")
+soil_data <- read.csv("D:\\Personal Hub\\UHasselt Course Material\\Semester 2\\pmhd\\soil.data.csv")
+outcome_data <- read.csv("D:\\Personal Hub\\UHasselt Course Material\\Semester 2\\pmhd\\outcome.data.csv")
+```
+
+```{r}
+dim(size_data)
+dim(outcome_data)
+dim(soil_data)
+```
+
+## EDA
+
+```{r}
+colSums(is.na(size_data))
+```
+
+```{r}
+size_data    <- na.omit(size_data)
+soil_data    <- na.omit(soil_data)
+outcome_data <- na.omit(outcome_data)
+```
+
+```{r}
+size_data$species <- as.factor(size_data$species)
+size_data$climate <- as.factor(size_data$climate)
+size_data$ecotr_id<- as.factor(size_data$ecotr_id)
+size_data$pear_id <- as.factor(size_data$pear_id)
+size_data$tree_id <- as.factor(size_data$tree_id)
+```
+
+```{r}
+table(size_data$ecotr_id, size_data$climate)
+cat("\n\nNumber of unique species:", length(unique(na.omit(size_data$species))))
+cat("\nUnique species:", unique(na.omit(size_data$species)))
+cat("\n\nNumber of unique climates:", length(unique(na.omit(size_data$climate))))
+cat("\nUnique climates:", unique(na.omit(size_data$climate)))
+```
+
+## Wide to Long Format
+
+```{r}
+# This transforms the data from wide format to long in terms of weeks
+# while also changing weeks to numeric
+long_df <- size_data %>%
+  pivot_longer(
+    cols = starts_with("week_"),
+    names_to = "week_num",
+    names_prefix = "week_",
+    names_transform = list(week_num = ~ as.numeric(.) - 5),
+    values_to = "size"
+  )
+```
+
+```{r}
+colnames(long_df)
+```
+
+```{r}
+unique(long_df$week_num)
+```
+
+```{r}
+head(long_df)
+```
+
+```{r}
+ggplot(long_df,
+       aes(x = week_num,
+           color = interaction(species, climate))) +
+  
+  geom_line(aes(y = size,
+                group = pear_id),
+            alpha = 0.15,
+            linewidth = 0.4) +
+  
+  stat_summary(aes(y = size,
+                   group = interaction(species, climate)),
+               fun = mean,
+               geom = "line",
+               linewidth = 1.4) +
+  
+  theme_minimal() +
+  labs(
+    x = "Week",
+    y = "Predicted pear size",
+    color = "Species + climate"
+  )
+```
+
+## Linear Mixed Model
+
+### Model 1
+
+```{r}
+# Linear + random intercept
+model1 <- lmer(
+  size ~ climate * species * week_num +
+  (1 | pear_id),
+  data = long_df
+)
+```
+
+```{r}
+summary(model1)
+```
+
+### Model 2
+
+```{r}
+# Linear + Random Intercept and Random slope
+model2 <- lmer(
+  size ~ climate * week_num * species +
+  (1 + week_num| pear_id),
+  data = long_df
+)
+```
+
+```{r}
+summary(model2)
+```
+
+### Model 3
+
+```{r}
+# Quadratic + random intercept
+model3 <- lmer(size ~ climate * (week_num + I(week_num^2)) * species +
+                 (1 | pear_id),
+               data = long_df)
+```
+
+```{r}
+summary(model3)
+```
+
+### Model 4
+
+```{r}
+# Quadratic with random intercept and random slope
+model4 <- lmer(size ~ climate * (week_num + I(week_num^2)) * species +
+                 (1 + week_num | pear_id),
+               data = long_df)
+```
+
+```{r}
+summary(model4)
+```
+
+### Model 5
+
+```{r}
+model4 <- lmer(size ~ climate * (week_num + I(week_num^2)) + species * week_num 
+               + species * I(week_num^2)
+               +(1 + week_num | pear_id),
+               data = long_df)
+```
+
+```{r}
+summary(model4)
+```
+
+### Model 6
+
+```{r}
+# Centering week to deal with week week^2 correlation
+# This fixes quadratic mixed-model convergence issue
+long_df$week_c <- long_df$week_num - mean(long_df$week_num)
+```
+
+```{r}
+model5 <- lmer(
+  size ~ climate * week_c +
+    species * (week_c + I(week_c^2)) +
+    I(week_c^2) +
+    (1 + week_c | pear_id),
+  data = long_df
+)
+```
+
+
+
+```{r}
+summary(model5)
+```
+
+```{r}
+AIC(
+  model1,
+  model2,
+  model3,
+  model4,
+  model5
+)
+```
+
+```{r}
+unique(long_df$week_c)
+```
+
+
+```{r}
+names(summary(model5))
+```
+
+```{r}
+summary(model1)$call
+summary(model2)$call
+summary(model3)$call
+summary(model4)$call
+summary(model4)$call
+summary(model5)$call
+```
+
+## Model 6 Assumptions and Visualization
+
+```{r}
+library(ggplot2)
+
+long_df$pred_individual <- predict(model5)
+
+ggplot(long_df,
+       aes(x = week_num,
+           color = species)) +
+
+  # individual pear predicted size
+  geom_line(aes(y = pred_individual,
+                group = pear_id),
+            alpha = 0.15,
+            linewidth = 0.4) +
+
+  # average predicted size per species
+  stat_summary(aes(y = pred_individual,
+                   group = species),
+               fun = mean,
+               geom = "line",
+               linewidth = 1.4,
+               alpha = 1) +
+
+  facet_wrap(~ climate) +
+  theme_minimal() +
+  labs(
+    x = "Week",
+    y = "Predicted pear size",
+    color = "Species"
+  )
+```
+
+```{r}
+isSingular(model5)
+```
+
+```{r}
+vc <- as.data.frame(VarCorr(model5))
+
+pear_var <- vc$vcov[1]
+resid_var <- vc$vcov[nrow(vc)]
+
+ICC <- pear_var / (pear_var + resid_var)
+
+ICC
+```
+
+```{r}
+BIC(
+  model1,
+  model2,
+  model3,
+  model4,
+  model5
+)
+```
+
+```{r}
+plot(model5)
+qqnorm(resid(model5)); qqline(resid(model5))
+```
+
+```{r}
+# Compare the estimates with model4 using another optimizer. Really powerful test!
+# I am not sure if it is included in the course notes. Expect a question on it.
+model_check <- update(
+  model5,
+  control = lmerControl(optimizer = "bobyqa")
+)
+```
+
+```{r}
+summary(model_check)
+```
+
+-   Model convergence was assessed using optimizer convergence diagnostics and singularity checks. No convergence issues or singular fits were detected.
+
+-   The model appears well converged, non-singular, reasonably homoscedastic, approximately normal, well fitted, properly accounting for dependence
+
+-   The estimated intraclass correlation coefficient (ICC) was approximately 0.47, indicating substantial within-pear dependence and supporting the use of a mixed-effects modeling framework.
+
+-   BIC still strongly prefers model5, then the extra terms removed in earlier models were likely unnecessary
+
+## Conclusions:
+
+**The final model suggests:**
+
+-   Pear size changes significantly over time.
+
+-   Growth is nonlinear: growth increases over time but gradually slows down.
+
+-   Pears exhibit substantial individual variability in both baseline size and growth trajectories, justifying the use of random intercepts and random slopes.
+
+-   Climate scenarios affect growth trajectories mainly through differences in linear growth rates rather than curvature.
+
+    -   Scenario 2 shows significantly faster growth than the reference climate.
+
+    -   Scenario 4 also shows moderately increased growth.
+
+    -   Scenario 3 behaves similarly to the reference climate.
+
+-   Species differences are substantial.
+
+    -   Doyenne pears are smaller on average than Conference pears.
+
+    -   Doyenne pears grow more slowly over time.
+
+    -   Doyenne pears also show stronger growth deceleration.
+
+-   Diagnostic analyses indicated:
+
+    -   acceptable homoscedasticity
+
+    -   approximately normal residuals
+
+    -   no major convergence or singularity issues
+
+    -   good overall model fit
+
+## Model 6 Extended Analysis
+
+```{r}
+library(emmeans)
+```
+
+```{r}
+# Apply Scenario 2 vs Scenarios 1,3, and 4
+emm <- emmeans(model5, ~ climate)
+
+contrast(
+  emm,
+  list("Climate 2 vs average others" = c(-1/3, 1, -1/3, -1/3))
+)
+```
+
+Scenario 2 has an estimated mean that is 0.621 units higher than the average of the estimated means of the other 3 scenarios.
+
+```{r}
+# Baseline Intercept per Pear on tree
+eb <- ranef(model5)$pear_id
+eb
+
+plot(eb)
+```
+
+```{r}
+library(geepack)
+```
+
+```{r}
+# Generalized Estimating Equations (GEE) model
+# with "exchangeable" correlation structure
+gee1 <- geeglm(
+  size ~ climate * week_c * species,
+  id = pear_id,
+  corstr = "exchangeable",
+  data = long_df
+)
+
+gee1
+```
+
+GEE model gave similar estimates to the LMM, which is expected given the gaussian nature of the outcome variable.
